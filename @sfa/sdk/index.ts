@@ -28,6 +28,7 @@ export type { LogEntry, LoggingConfig } from "./logging";
 export { resolveContextStorePath, writeContext, searchContext, updateContext, addContextLink } from "./context";
 export { invoke } from "./invoke";
 export { startServices, stopServices, composeDown, handleServicesDown, checkDockerAvailability } from "./services";
+export { serveMcp } from "./mcp";
 
 import type { AgentDefinition, AgentResult, ExecuteContext } from "./types";
 import type { WriteContextInput, SearchContextInput } from "./types";
@@ -54,6 +55,7 @@ import {
 } from "./context";
 import { invoke as invokeSubagent } from "./invoke";
 import { startServices, stopServices, handleServicesDown } from "./services";
+import { serveMcp } from "./mcp";
 
 /**
  * Define and run a single-file agent.
@@ -117,7 +119,21 @@ async function runAgent(def: AgentDefinition): Promise<void> {
   const mergedConfig = mergeConfig(config, def.name);
 
   // --- Section 4: Resolve and validate environment ---
-  const declarations = def.env ?? [];
+  // Auto-declare SFA_SVC_* env vars for each service so they flow through
+  // config resolution and --setup. This lets users override service connection
+  // info per-agent (e.g. point at a remote database instead of local Docker).
+  const serviceEnvDeclarations: import("./types").EnvDeclaration[] = [];
+  if (def.services) {
+    for (const svcName of Object.keys(def.services)) {
+      const envPrefix = `SFA_SVC_${svcName.toUpperCase().replace(/-/g, "_")}`;
+      serviceEnvDeclarations.push(
+        { name: `${envPrefix}_URL`, description: `Connection URL for ${svcName} service` },
+        { name: `${envPrefix}_HOST`, description: `Host for ${svcName} service` },
+        { name: `${envPrefix}_PORT`, description: `Port for ${svcName} service` },
+      );
+    }
+  }
+  const declarations = [...(def.env ?? []), ...serviceEnvDeclarations];
   const resolvedEnv = resolveEnv(declarations, def.name, config);
 
   // --setup: run interactive setup and exit
@@ -138,6 +154,30 @@ async function runAgent(def: AgentDefinition): Promise<void> {
   // --- Section 9: Handle --services-down flag ---
   if (args.flags["services-down"]) {
     await handleServicesDown(def.name);
+  }
+
+  // --- Section 10: MCP mode ---
+  if (args.flags.mcp) {
+    // 10.11: Opt-in/opt-out check
+    if (def.mcpSupported === false) {
+      exitWithError("MCP mode is not supported by this agent.", ExitCode.INVALID_USAGE);
+    }
+
+    const safety = initSafety(def.name, args.flags["max-depth"]);
+    const loggingConfig = resolveLoggingConfig(config, args.flags["no-log"]);
+    const contextStorePath = resolveContextStorePath(config);
+
+    // 10.1: Switch to MCP server mode — does not return
+    await serveMcp({
+      def,
+      safety,
+      loggingConfig,
+      contextStorePath,
+      resolvedEnv,
+      mergedConfig,
+      quiet: args.flags.quiet,
+      timeoutSeconds: args.flags.timeout,
+    });
   }
 
   // --- Section 5: Safety & Guardrails ---
@@ -229,7 +269,7 @@ async function runAgent(def: AgentDefinition): Promise<void> {
 
     // Tear down ephemeral services on failure
     if (def.services && Object.keys(def.services).length > 0) {
-      await stopServices(def.name, def.serviceLifecycle);
+      await stopServices(def.name, def.serviceLifecycle, def.services);
     }
 
     if (ac.signal.aborted) {
@@ -279,7 +319,7 @@ async function runAgent(def: AgentDefinition): Promise<void> {
 
   // Tear down ephemeral services on success
   if (def.services && Object.keys(def.services).length > 0) {
-    await stopServices(def.name, def.serviceLifecycle);
+    await stopServices(def.name, def.serviceLifecycle, def.services);
   }
 
   // Progress: completed

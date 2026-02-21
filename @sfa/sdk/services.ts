@@ -2,6 +2,8 @@ import type { AgentDefinition, ServiceDefinition, ServiceLifecycle } from "./typ
 import { ExitCode } from "./types";
 import { emitProgress, exitWithError } from "./output";
 
+import { connect, type Socket } from "node:net";
+
 const DATA_DIR = `${process.env.HOME}/.local/share/single-file-agents/services`;
 
 /**
@@ -35,6 +37,79 @@ async function findExistingComposeFile(agentName: string): Promise<string | null
     }
   }
   return null;
+}
+
+// -------------------------------------------------------------------
+// External service detection and verification
+// -------------------------------------------------------------------
+
+/**
+ * Get the env var name prefix for a service (e.g. "postgres" → "POSTGRES").
+ */
+function serviceEnvName(serviceName: string): string {
+  return serviceName.toUpperCase().replace(/-/g, "_");
+}
+
+/**
+ * Check if a service has pre-configured connection vars in the environment.
+ * Returns true if SFA_SVC_<NAME>_URL or (SFA_SVC_<NAME>_HOST and SFA_SVC_<NAME>_PORT) are set.
+ */
+function isServiceExternallyConfigured(serviceName: string): boolean {
+  const prefix = `SFA_SVC_${serviceEnvName(serviceName)}`;
+  if (process.env[`${prefix}_URL`]) return true;
+  if (process.env[`${prefix}_HOST`] && process.env[`${prefix}_PORT`]) return true;
+  return false;
+}
+
+/**
+ * Parse host and port from pre-configured env vars for a service.
+ */
+function getExternalServiceAddress(serviceName: string): { host: string; port: number } | null {
+  const prefix = `SFA_SVC_${serviceEnvName(serviceName)}`;
+
+  const host = process.env[`${prefix}_HOST`];
+  const port = process.env[`${prefix}_PORT`];
+  if (host && port) {
+    return { host, port: parseInt(port, 10) };
+  }
+
+  // Try to parse from URL
+  const url = process.env[`${prefix}_URL`];
+  if (url) {
+    try {
+      const parsed = new URL(url);
+      const parsedPort = parseInt(parsed.port, 10);
+      if (parsed.hostname && !isNaN(parsedPort)) {
+        return { host: parsed.hostname, port: parsedPort };
+      }
+    } catch {
+      // URL parse failed — can't verify
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Verify a remote service is reachable via TCP connect.
+ * Returns true if the connection succeeds within the timeout.
+ */
+async function verifyServiceReachable(host: string, port: number, timeoutMs: number = 5000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket: Socket = connect({ host, port }, () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.setTimeout(timeoutMs);
+    socket.on("timeout", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.on("error", () => {
+      socket.destroy();
+      resolve(false);
+    });
+  });
 }
 
 // -------------------------------------------------------------------
@@ -480,13 +555,51 @@ export async function startServices(
   if (!def.services || Object.keys(def.services).length === 0) return;
 
   const agentName = def.name;
+  const allServiceNames = Object.keys(def.services);
 
-  // 9.1: Check docker availability
+  // Partition: externally configured vs needs-Docker
+  const externalServices: string[] = [];
+  const dockerServices: string[] = [];
+  for (const name of allServiceNames) {
+    if (isServiceExternallyConfigured(name)) {
+      externalServices.push(name);
+    } else {
+      dockerServices.push(name);
+    }
+  }
+
+  // Verify external services are reachable
+  for (const name of externalServices) {
+    const addr = getExternalServiceAddress(name);
+    if (addr) {
+      emitProgress(agentName, `verifying external service ${name} at ${addr.host}:${addr.port}`);
+      const reachable = await verifyServiceReachable(addr.host, addr.port);
+      if (!reachable) {
+        exitWithError(
+          `External service "${name}" is not reachable at ${addr.host}:${addr.port}.\n` +
+            `Check your SFA_SVC_${serviceEnvName(name)}_* environment variables or run --setup to reconfigure.`,
+          ExitCode.FAILURE,
+        );
+      }
+      emitProgress(agentName, `external service ${name} reachable`);
+    }
+    // If we can't parse an address (e.g. URL without a port), skip verification —
+    // the agent will fail at connection time with a clear error anyway.
+  }
+
+  // If all services are externally configured, skip Docker entirely
+  if (dockerServices.length === 0) {
+    emitProgress(agentName, "all services externally configured, skipping Docker");
+    return;
+  }
+
+  // 9.1: Check docker availability (only needed for Docker-managed services)
   await checkDockerAvailability();
 
-  emitProgress(agentName, "starting services");
+  emitProgress(agentName, `starting ${dockerServices.length}/${allServiceNames.length} services via Docker`);
 
-  // 9.2: Materialize compose template
+  // 9.2: Materialize compose template (full template — Docker ignores services
+  // that are already running, and external services won't have containers)
   await materializeCompose(def.services, agentName, def.version, env);
 
   // 9.9: Compute template hash for change detection
@@ -521,9 +634,10 @@ export async function startServices(
   const healthTimeout = (def as AgentDefinition & { serviceHealthTimeout?: number }).serviceHealthTimeout ?? 60;
   await waitForHealthy(agentName, healthTimeout);
 
-  // 9.6 / 9.7: Inject connection strings
-  for (const [serviceName, svcDef] of Object.entries(def.services)) {
-    await injectServiceConnectionVars(agentName, serviceName, svcDef);
+  // 9.6 / 9.7: Inject connection strings only for Docker-managed services
+  // (external services already have their vars set)
+  for (const serviceName of dockerServices) {
+    await injectServiceConnectionVars(agentName, serviceName, def.services[serviceName]);
   }
 
   emitProgress(agentName, "services ready");
@@ -531,13 +645,22 @@ export async function startServices(
 
 /**
  * Stop services after agent execution (for ephemeral lifecycle).
+ * Only tears down Docker-managed services. If all services were external,
+ * this is a no-op regardless of lifecycle mode.
  */
 export async function stopServices(
   agentName: string,
   lifecycle: ServiceLifecycle = "persistent",
+  services?: Record<string, ServiceDefinition>,
 ): Promise<void> {
   // 9.11: Persistent — do nothing, leave running
   if (lifecycle === "persistent") return;
+
+  // If services info provided, check whether Docker was used at all
+  if (services) {
+    const hasDocker = Object.keys(services).some((name) => !isServiceExternallyConfigured(name));
+    if (!hasDocker) return;
+  }
 
   // 9.10: Ephemeral — tear down
   emitProgress(agentName, "stopping ephemeral services");
