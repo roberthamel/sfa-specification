@@ -1,0 +1,10 @@
+{
+  "name": "@sfa/sdk",
+  "version": "0.1.0",
+  "description": "Single-File Agents TypeScript/Bun reference SDK",
+  "type": "module",
+  "main": "index.ts",
+  "types": "index.ts",
+  "private": true,
+  "dependencies": {}
+}
