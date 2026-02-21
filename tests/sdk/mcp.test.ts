@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 
-const SDK_PATH = join(process.cwd(), "@sfa/sdk/index");
+const SDK_PATH = join(process.cwd(), "sdk/typescript/@sfa/sdk/index");
 
 describe("MCP server mode", () => {
   let tmpDir: string;
@@ -48,15 +48,11 @@ defineAgent({
     const input = messages.map((m) => JSON.stringify(m)).join("\n") + "\n";
 
     const proc = Bun.spawn(["bun", agentPath, "--mcp", "--no-log"], {
-      stdin: "pipe",
+      stdin: new Blob([input]),
       stdout: "pipe",
       stderr: "pipe",
       env: { ...process.env, SFA_NO_LOG: "1" },
     });
-
-    // Write messages to stdin then close it
-    proc.stdin.write(input);
-    proc.stdin.end();
 
     const stdout = await new Response(proc.stdout).text();
 
