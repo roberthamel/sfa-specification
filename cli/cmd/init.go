@@ -20,13 +20,14 @@ type Scaffolder interface {
 	GenerateReadme(name string) string
 	// AdditionalFiles returns a map of relative file path → content for extra files
 	// the language needs (e.g., go.mod for Go).
-	AdditionalFiles(name string) map[string]string
+	AdditionalFiles(name, sdkPath string) map[string]string
 	// SDKTargetDir returns the default vendored SDK directory name (e.g., "@sfa/sdk" or "sfa").
 	SDKTargetDir() string
 }
 
 var scaffolders = map[string]Scaffolder{
 	"typescript": &TypeScriptScaffolder{},
+	"golang":     &GolangScaffolder{},
 }
 
 var (
@@ -119,7 +120,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Write additional files (e.g., go.mod for Go)
-	for relPath, content := range scaffolder.AdditionalFiles(agentName) {
+	for relPath, content := range scaffolder.AdditionalFiles(agentName, sdkPath) {
 		absPath := filepath.Join(dir, relPath)
 		if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
 			return fmt.Errorf("failed to create directory for %s: %w", relPath, err)
@@ -238,6 +239,93 @@ sfa validate ./agent.ts
 `, name, name)
 }
 
-func (t *TypeScriptScaffolder) AdditionalFiles(name string) map[string]string {
+func (t *TypeScriptScaffolder) AdditionalFiles(name, sdkPath string) map[string]string {
 	return nil
+}
+
+// --- GolangScaffolder ---
+
+type GolangScaffolder struct{}
+
+func (g *GolangScaffolder) SDKTargetDir() string {
+	return "sfa"
+}
+
+func (g *GolangScaffolder) GenerateAgent(name, displayName, sdkPath string) string {
+	// The import path uses the project module name + SDK path
+	return fmt.Sprintf(`package main
+
+import "%s/%s"
+
+func main() {
+	agent := sfa.DefineAgent(sfa.AgentDef{
+		Name:        %q,
+		Version:     "0.1.0",
+		Description: %q,
+		TrustLevel:  sfa.TrustSandboxed,
+		Execute: func(ctx *sfa.ExecuteContext) (any, error) {
+			input := ctx.Input
+			ctx.Progress("Processing...")
+
+			// TODO: implement your agent logic here
+			_ = input
+
+			return sfa.AgentResult{
+				Result: "Hello from %s!",
+			}, nil
+		},
+	})
+	agent.Run()
+}
+`, name, filepath.ToSlash(sdkPath), name, displayName, name)
+}
+
+func (g *GolangScaffolder) GenerateReadme(name string) string {
+	return fmt.Sprintf(`# %s
+
+A single-file agent built with the [SFA Go SDK](https://github.com/sfa/sdk).
+
+## Quick Start
+
+`+"`"+`sh
+# Build and run
+go build -o %s . && ./%s --help
+
+# Run the agent
+echo "input" | ./%s
+
+# Validate spec compliance
+sfa validate ./%s
+`+"`"+`
+`, name, name, name, name, name)
+}
+
+func (g *GolangScaffolder) AdditionalFiles(name, sdkPath string) map[string]string {
+	files := make(map[string]string)
+
+	sdkSlash := filepath.ToSlash(sdkPath)
+	sdkRelative := "./" + sdkSlash
+
+	// Main go.mod
+	files["go.mod"] = fmt.Sprintf(`module %s
+
+go 1.22
+
+require %s/%s v0.0.0
+
+replace %s/%s => %s
+`, name, name, sdkSlash, name, sdkSlash, sdkRelative)
+
+	// SDK go.mod
+	files[filepath.Join(sdkPath, "go.mod")] = fmt.Sprintf(`module %s/%s
+
+go 1.22
+
+require github.com/spf13/pflag v1.0.9
+`, name, sdkSlash)
+
+	// SDK go.sum (pflag dependency)
+	files[filepath.Join(sdkPath, "go.sum")] = "github.com/spf13/pflag v1.0.9 h1:9exaQaMOCwffKiiiYk6/BndUBv+iRViNW+4lEMi0PvY=\ngithub.com/spf13/pflag v1.0.9/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=\n"
+
+	return files
 }
