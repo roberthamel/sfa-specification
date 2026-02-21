@@ -63,15 +63,18 @@ func parseArgs(argv []string, customOptions []OptionDef) (*ParsedArgs, error) {
 	// Custom option flags
 	customPtrs := make(map[string]any)
 	for _, opt := range customOptions {
+		alias := opt.Alias
 		switch opt.Type {
 		case "string":
 			def := ""
 			if opt.Default != nil {
 				def = fmt.Sprintf("%v", opt.Default)
 			}
-			p := fs.String(opt.Name, def, opt.Description)
-			if opt.Alias != "" {
-				fs.StringVarP(p, opt.Name, opt.Alias, def, opt.Description)
+			var p *string
+			if alias != "" {
+				p = fs.StringP(opt.Name, alias, def, opt.Description)
+			} else {
+				p = fs.String(opt.Name, def, opt.Description)
 			}
 			customPtrs[opt.Name] = p
 		case "number":
@@ -84,9 +87,11 @@ func parseArgs(argv []string, customOptions []OptionDef) (*ParsedArgs, error) {
 					def = int(v)
 				}
 			}
-			p := fs.Int(opt.Name, def, opt.Description)
-			if opt.Alias != "" {
-				fs.IntVarP(p, opt.Name, opt.Alias, def, opt.Description)
+			var p *int
+			if alias != "" {
+				p = fs.IntP(opt.Name, alias, def, opt.Description)
+			} else {
+				p = fs.Int(opt.Name, def, opt.Description)
 			}
 			customPtrs[opt.Name] = p
 		case "boolean":
@@ -96,9 +101,11 @@ func parseArgs(argv []string, customOptions []OptionDef) (*ParsedArgs, error) {
 					def = b
 				}
 			}
-			p := fs.Bool(opt.Name, def, opt.Description)
-			if opt.Alias != "" {
-				fs.BoolVarP(p, opt.Name, opt.Alias, def, opt.Description)
+			var p *bool
+			if alias != "" {
+				p = fs.BoolP(opt.Name, alias, def, opt.Description)
+			} else {
+				p = fs.Bool(opt.Name, def, opt.Description)
 			}
 			customPtrs[opt.Name] = p
 		}
