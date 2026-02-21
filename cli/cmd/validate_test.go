@@ -219,8 +219,8 @@ func findSDKPath() string {
 	// Walk up to find the project root
 	dir, _ := os.Getwd()
 	for {
-		sdkPath := filepath.Join(dir, "@sfa", "sdk", "index")
-		if _, err := os.Stat(filepath.Join(dir, "@sfa", "sdk", "index.ts")); err == nil {
+		sdkPath := filepath.Join(dir, "sdk", "typescript", "@sfa", "sdk", "index")
+		if _, err := os.Stat(filepath.Join(dir, "sdk", "typescript", "@sfa", "sdk", "index.ts")); err == nil {
 			return sdkPath
 		}
 		parent := filepath.Dir(dir)
@@ -230,5 +230,5 @@ func findSDKPath() string {
 		dir = parent
 	}
 	// Fallback — assume typical project layout
-	return "../../@sfa/sdk/index"
+	return "../../sdk/typescript/@sfa/sdk/index"
 }

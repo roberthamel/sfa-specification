@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,7 +12,28 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var initName string
+// Scaffolder defines the interface for language-specific project scaffolding.
+type Scaffolder interface {
+	// GenerateAgent returns the content for the main agent file.
+	GenerateAgent(name, displayName, sdkPath string) string
+	// GenerateReadme returns the content for the README.md file.
+	GenerateReadme(name string) string
+	// AdditionalFiles returns a map of relative file path → content for extra files
+	// the language needs (e.g., go.mod for Go).
+	AdditionalFiles(name string) map[string]string
+	// SDKTargetDir returns the default vendored SDK directory name (e.g., "@sfa/sdk" or "sfa").
+	SDKTargetDir() string
+}
+
+var scaffolders = map[string]Scaffolder{
+	"typescript": &TypeScriptScaffolder{},
+}
+
+var (
+	initName     string
+	initLanguage string
+	initSDKPath  string
+)
 
 var initCmd = &cobra.Command{
 	Use:   "init <directory>",
@@ -23,10 +45,28 @@ var initCmd = &cobra.Command{
 
 func init() {
 	initCmd.Flags().StringVar(&initName, "name", "", "Custom display name for the agent (e.g. \"Code Reviewer\")")
+	initCmd.Flags().StringVar(&initLanguage, "language", "typescript", "SDK language (typescript, golang)")
+	initCmd.Flags().StringVar(&initSDKPath, "sdk-path", "", "Override the default SDK vendoring location")
+}
+
+// sfaMarker is the content written to .sfa in scaffolded projects.
+type sfaMarker struct {
+	Language string `json:"language"`
+	SDKPath  string `json:"sdkPath"`
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
 	dir := args[0]
+
+	// Validate language
+	scaffolder, ok := scaffolders[initLanguage]
+	if !ok {
+		supported := make([]string, 0, len(scaffolders))
+		for lang := range scaffolders {
+			supported = append(supported, lang)
+		}
+		return fmt.Errorf("unsupported language %q (supported: %s)", initLanguage, strings.Join(supported, ", "))
+	}
 
 	// Guard: refuse if directory exists and is non-empty
 	if entries, err := os.ReadDir(dir); err == nil && len(entries) > 0 {
@@ -41,59 +81,121 @@ func runInit(cmd *cobra.Command, args []string) error {
 		agentName = toKebabCase(initName)
 	}
 
-	// Create directory structure
-	sdkDir := filepath.Join(dir, "@sfa", "sdk")
+	// Determine SDK target directory
+	sdkPath := scaffolder.SDKTargetDir()
+	if initSDKPath != "" {
+		sdkPath = initSDKPath
+	}
+
+	sdkDir := filepath.Join(dir, sdkPath)
 	if err := os.MkdirAll(sdkDir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
+		return fmt.Errorf("failed to create SDK directory: %w", err)
 	}
 
 	// Extract embedded SDK files
-	if err := embedded.ExtractSDK("typescript", sdkDir); err != nil {
+	if err := embedded.ExtractSDK(initLanguage, sdkDir); err != nil {
 		return fmt.Errorf("failed to extract SDK: %w", err)
 	}
 
-	// Write agent.ts scaffold
-	agentTS := generateAgentScaffold(agentName, displayName)
-	if err := os.WriteFile(filepath.Join(dir, "agent.ts"), []byte(agentTS), 0644); err != nil {
-		return fmt.Errorf("failed to write agent.ts: %w", err)
+	// Inject VERSION and CHANGELOG.md into vendored SDK directory
+	if err := embedded.InjectVersionFiles(sdkDir); err != nil {
+		return fmt.Errorf("failed to inject version files: %w", err)
+	}
+
+	// Write main agent file
+	agentContent := scaffolder.GenerateAgent(agentName, displayName, sdkPath)
+	agentFile := "agent.ts"
+	if initLanguage == "golang" {
+		agentFile = "agent.go"
+	}
+	if err := os.WriteFile(filepath.Join(dir, agentFile), []byte(agentContent), 0644); err != nil {
+		return fmt.Errorf("failed to write %s: %w", agentFile, err)
 	}
 
 	// Write README.md
-	readme := generateReadme(agentName)
+	readme := scaffolder.GenerateReadme(agentName)
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte(readme), 0644); err != nil {
 		return fmt.Errorf("failed to write README.md: %w", err)
 	}
 
-	fmt.Printf("Created agent project in %s/\n", dir)
+	// Write additional files (e.g., go.mod for Go)
+	for relPath, content := range scaffolder.AdditionalFiles(agentName) {
+		absPath := filepath.Join(dir, relPath)
+		if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
+			return fmt.Errorf("failed to create directory for %s: %w", relPath, err)
+		}
+		if err := os.WriteFile(absPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write %s: %w", relPath, err)
+		}
+	}
+
+	// Write .sfa marker file
+	// Ensure sdkPath ends with /
+	markerSDKPath := sdkPath
+	if !strings.HasSuffix(markerSDKPath, "/") {
+		markerSDKPath += "/"
+	}
+	marker := sfaMarker{
+		Language: initLanguage,
+		SDKPath:  markerSDKPath,
+	}
+	markerData, err := json.MarshalIndent(marker, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal .sfa marker: %w", err)
+	}
+	markerData = append(markerData, '\n')
+	if err := os.WriteFile(filepath.Join(dir, ".sfa"), markerData, 0644); err != nil {
+		return fmt.Errorf("failed to write .sfa: %w", err)
+	}
+
+	// Print success message
+	fmt.Printf("Created %s agent project in %s/\n", initLanguage, dir)
 	fmt.Println()
-	fmt.Println("  Quick start:")
-	fmt.Printf("    cd %s\n", dir)
-	fmt.Println("    bun agent.ts --help")
-	fmt.Println()
-	fmt.Println("  Compile:")
-	fmt.Printf("    bun build --compile agent.ts --outfile %s\n", agentName)
-	fmt.Println()
-	fmt.Println("  Validate:")
-	fmt.Printf("    sfa validate ./agent.ts\n")
+
+	switch initLanguage {
+	case "typescript":
+		fmt.Println("  Quick start:")
+		fmt.Printf("    cd %s\n", dir)
+		fmt.Println("    bun agent.ts --help")
+		fmt.Println()
+		fmt.Println("  Compile:")
+		fmt.Printf("    bun build --compile agent.ts --outfile %s\n", agentName)
+		fmt.Println()
+		fmt.Println("  Validate:")
+		fmt.Println("    sfa validate ./agent.ts")
+	case "golang":
+		fmt.Println("  Quick start:")
+		fmt.Printf("    cd %s\n", dir)
+		fmt.Printf("    go build -o %s . && ./%s --help\n", agentName, agentName)
+		fmt.Println()
+		fmt.Println("  Validate:")
+		fmt.Printf("    sfa validate ./%s\n", agentName)
+	}
 
 	return nil
 }
 
 func toKebabCase(s string) string {
-	// Insert hyphens before uppercase letters (camelCase/PascalCase)
 	re := regexp.MustCompile(`([a-z])([A-Z])`)
 	s = re.ReplaceAllString(s, "${1}-${2}")
-	// Replace spaces and underscores with hyphens
 	s = strings.NewReplacer(" ", "-", "_", "-").Replace(s)
-	// Lowercase and collapse multiple hyphens
 	s = strings.ToLower(s)
 	re = regexp.MustCompile(`-+`)
 	s = re.ReplaceAllString(s, "-")
 	return strings.Trim(s, "-")
 }
 
-func generateAgentScaffold(name, displayName string) string {
-	return fmt.Sprintf(`import { defineAgent } from "./@sfa/sdk";
+// --- TypeScriptScaffolder ---
+
+type TypeScriptScaffolder struct{}
+
+func (t *TypeScriptScaffolder) SDKTargetDir() string {
+	return filepath.Join("@sfa", "sdk")
+}
+
+func (t *TypeScriptScaffolder) GenerateAgent(name, displayName, sdkPath string) string {
+	importPath := "./" + filepath.ToSlash(sdkPath)
+	return fmt.Sprintf(`import { defineAgent } from %q;
 
 export default defineAgent({
   name: %q,
@@ -109,10 +211,10 @@ export default defineAgent({
     return { result: "Hello from %s!" };
   },
 });
-`, name, displayName, name)
+`, importPath, name, displayName, name)
 }
 
-func generateReadme(name string) string {
+func (t *TypeScriptScaffolder) GenerateReadme(name string) string {
 	return fmt.Sprintf(`# %s
 
 A single-file agent built with the [SFA SDK](https://github.com/sfa/sdk).
@@ -131,7 +233,11 @@ echo "input" | bun agent.ts
 bun build --compile agent.ts --outfile %s
 
 # Validate spec compliance
-sfa validate ./%s
+sfa validate ./agent.ts
 `+"```"+`
-`, name, name, name)
+`, name, name)
+}
+
+func (t *TypeScriptScaffolder) AdditionalFiles(name string) map[string]string {
+	return nil
 }
