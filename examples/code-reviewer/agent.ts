@@ -1,4 +1,4 @@
-import { defineAgent } from "../../@sfa/sdk";
+import { defineAgent } from "../../sdk/typescript/@sfa/sdk";
 
 export default defineAgent({
   name: "code-reviewer",

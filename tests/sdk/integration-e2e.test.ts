@@ -42,7 +42,7 @@ describe("end-to-end integration", () => {
   function createE2EAgent(): string {
     const agentPath = join(tmpDir, "e2e-agent.ts");
     const code = `
-import { defineAgent } from "${join(process.cwd(), "@sfa/sdk/index")}";
+import { defineAgent } from "${join(process.cwd(), "sdk/typescript/@sfa/sdk/index")}";
 
 defineAgent({
   name: "e2e-agent",
@@ -206,7 +206,7 @@ defineAgent({
   test("agent with subagent invocation (echo as subagent)", async () => {
     const agentPath = join(tmpDir, "parent-agent.ts");
     const code = `
-import { defineAgent } from "${join(process.cwd(), "@sfa/sdk/index")}";
+import { defineAgent } from "${join(process.cwd(), "sdk/typescript/@sfa/sdk/index")}";
 
 defineAgent({
   name: "parent-agent",
@@ -286,7 +286,7 @@ defineAgent({
   test("text output format (default)", async () => {
     const agentPath = join(tmpDir, "text-agent.ts");
     const code = `
-import { defineAgent } from "${join(process.cwd(), "@sfa/sdk/index")}";
+import { defineAgent } from "${join(process.cwd(), "sdk/typescript/@sfa/sdk/index")}";
 
 defineAgent({
   name: "text-agent",

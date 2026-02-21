@@ -5,7 +5,7 @@ import {
   checkLoop,
   buildSubagentSafetyEnv,
   setupTimeout,
-} from "../../@sfa/sdk/safety";
+} from "../../sdk/typescript/@sfa/sdk/safety";
 
 let savedEnv: Record<string, string | undefined>;
 

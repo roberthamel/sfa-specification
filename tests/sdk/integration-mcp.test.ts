@@ -25,7 +25,7 @@ describe("MCP integration", () => {
   function createMcpAgent(): string {
     const agentPath = join(tmpDir, "mcp-int-agent.ts");
     const code = `
-import { defineAgent } from "${join(process.cwd(), "@sfa/sdk/index")}";
+import { defineAgent } from "${join(process.cwd(), "sdk/typescript/@sfa/sdk/index")}";
 
 defineAgent({
   name: "mcp-int-agent",

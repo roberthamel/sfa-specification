@@ -1,6 +1,6 @@
 import { test, expect, describe } from "bun:test";
-import { generateDescribe } from "../../@sfa/sdk/help";
-import type { AgentDefinition } from "../../@sfa/sdk/types";
+import { generateDescribe } from "../../sdk/typescript/@sfa/sdk/help";
+import type { AgentDefinition } from "../../sdk/typescript/@sfa/sdk/types";
 
 const minimalDef: AgentDefinition = {
   name: "test-agent",

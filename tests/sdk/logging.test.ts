@@ -6,8 +6,8 @@ import {
   resolveLoggingConfig,
   createLogEntry,
   writeLogEntry,
-} from "../../@sfa/sdk/logging";
-import type { SfaConfig } from "../../@sfa/sdk/config";
+} from "../../sdk/typescript/@sfa/sdk/logging";
+import type { SfaConfig } from "../../sdk/typescript/@sfa/sdk/config";
 
 let tmpDir: string;
 let savedEnv: Record<string, string | undefined>;

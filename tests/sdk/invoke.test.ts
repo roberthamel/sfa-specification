@@ -1,6 +1,6 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test";
-import { invoke } from "../../@sfa/sdk/invoke";
-import type { SafetyState } from "../../@sfa/sdk/safety";
+import { invoke } from "../../sdk/typescript/@sfa/sdk/invoke";
+import type { SafetyState } from "../../sdk/typescript/@sfa/sdk/safety";
 
 let savedEnv: Record<string, string | undefined>;
 

@@ -1,5 +1,5 @@
-import { defineAgent } from "../../@sfa/sdk";
-import type { ExecuteContext, AgentResult } from "../../@sfa/sdk";
+import { defineAgent } from "../../sdk/typescript/@sfa/sdk";
+import type { ExecuteContext, AgentResult } from "../../sdk/typescript/@sfa/sdk";
 
 /**
  * MCP-enabled code reviewer with three tools:

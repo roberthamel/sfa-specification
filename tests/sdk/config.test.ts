@@ -8,7 +8,7 @@ import {
   mergeConfig,
   applyEnvOverrides,
   getAgentNamespace,
-} from "../../@sfa/sdk/config";
+} from "../../sdk/typescript/@sfa/sdk/config";
 
 let tmpDir: string;
 

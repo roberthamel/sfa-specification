@@ -8,8 +8,8 @@ import { mkdirSync, rmSync, readFileSync, statSync } from "node:fs";
 // requiring Docker are in the integration test file (12.12).
 
 // We test materializeCompose by importing and checking the generated YAML.
-import { materializeCompose } from "../../@sfa/sdk/services";
-import type { ServiceDefinition } from "../../@sfa/sdk/types";
+import { materializeCompose } from "../../sdk/typescript/@sfa/sdk/services";
+import type { ServiceDefinition } from "../../sdk/typescript/@sfa/sdk/types";
 
 let tmpDir: string;
 

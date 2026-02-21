@@ -8,8 +8,8 @@ import {
   searchContext,
   updateContext,
   addContextLink,
-} from "../../@sfa/sdk/context";
-import type { SfaConfig } from "../../@sfa/sdk/config";
+} from "../../sdk/typescript/@sfa/sdk/context";
+import type { SfaConfig } from "../../sdk/typescript/@sfa/sdk/config";
 
 let tmpDir: string;
 let savedEnv: Record<string, string | undefined>;

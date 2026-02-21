@@ -6,9 +6,9 @@ import {
   maskSecrets,
   buildSubagentEnv,
   formatMissingEnvError,
-} from "../../@sfa/sdk/env";
-import type { EnvDeclaration } from "../../@sfa/sdk/types";
-import type { SfaConfig } from "../../@sfa/sdk/config";
+} from "../../sdk/typescript/@sfa/sdk/env";
+import type { EnvDeclaration } from "../../sdk/typescript/@sfa/sdk/types";
+import type { SfaConfig } from "../../sdk/typescript/@sfa/sdk/config";
 
 // Save and restore env between tests
 let savedEnv: Record<string, string | undefined>;

@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { parseArgs } from "../../@sfa/sdk/cli";
+import { parseArgs } from "../../sdk/typescript/@sfa/sdk/cli";
 
 describe("parseArgs", () => {
   describe("standard flags", () => {
