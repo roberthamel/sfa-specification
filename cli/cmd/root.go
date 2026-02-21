@@ -18,4 +18,5 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(servicesCmd)
+	rootCmd.AddCommand(updateCmd)
 }
