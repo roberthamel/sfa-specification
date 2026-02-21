@@ -48,7 +48,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Extract embedded SDK files
-	if err := embedded.ExtractSDK(sdkDir); err != nil {
+	if err := embedded.ExtractSDK("typescript", sdkDir); err != nil {
 		return fmt.Errorf("failed to extract SDK: %w", err)
 	}
 
