@@ -4,7 +4,37 @@ A standard for building portable, composable, CLI-invokable agents that can be d
 
 An SFA is a self-contained executable with a consistent CLI interface. Any agent that implements the spec can be invoked by any other agent — no custom integration code required.
 
-## Quick start
+## Specification
+
+The spec covers 13 capabilities. An agent can adopt them incrementally — start with just the CLI interface and add more over time.
+
+| Spec | What it defines |
+|---|---|
+| [CLI Interface](docs/cli-interface.md) | Standard args, flags, output contract, exit codes |
+| [Shared Config](docs/shared-config.md) | Config file location, schema, env var overrides |
+| [Agent Discovery](docs/agent-discovery.md) | Relative path, PATH lookup, explicit declaration |
+| [Execution Model](docs/execution-model.md) | Context input, opaque execution, result delivery |
+| [Safety & Guardrails](docs/safety-and-guardrails.md) | Depth tracking, loop detection, timeouts, signals |
+| [Security](docs/security.md) | Trust levels, setup flow, filesystem boundaries |
+| [Execution Logging](docs/execution-logging.md) | JSONL format, session tracking, rotation |
+| [Context Store](docs/context-store.md) | Persistent store for findings, decisions, artifacts |
+| [Agent Environment](docs/agent-environment.md) | Env var declaration, validation, precedence |
+| [Service Dependencies](docs/service-dependencies.md) | Embedded docker compose, health checks, connection injection |
+| [MCP Server Mode](docs/mcp-server-mode.md) | `--mcp` flag, tool mapping, dual-mode agents |
+| [SDK (TypeScript/Bun)](docs/sdk-typescript.md) | Reference implementation and API surface |
+| [sfa CLI](docs/sfa-cli.md) | Go binary for scaffolding, validation, service management |
+
+## Guides
+
+- [Getting Started](docs/guides/getting-started.md) — create your first agent in 5 minutes
+- [SDK API Reference](docs/guides/sdk-api-reference.md) — all exported functions, types, and options
+- [Vendoring](docs/guides/vendoring.md) — copy the SDK into your project
+- [Services](docs/guides/services.md) — add docker compose dependencies
+- [Discovery](docs/guides/discovery.md) — make your agent findable
+- [Compilation](docs/guides/compilation.md) — build standalone executables
+- [MCP Server Mode](docs/guides/mcp.md) — expose your agent as an MCP server
+
+## SDK Quick start
 
 ### TypeScript (Bun)
 
@@ -102,36 +132,6 @@ single-file-agents/
 ├── VERSION                   # Spec version (shared across all SDKs)
 └── CHANGELOG.md              # Release history
 ```
-
-## Specification
-
-The spec covers 13 capabilities. An agent can adopt them incrementally — start with just the CLI interface and add more over time.
-
-| Spec | What it defines |
-|---|---|
-| [CLI Interface](docs/cli-interface.md) | Standard args, flags, output contract, exit codes |
-| [Shared Config](docs/shared-config.md) | Config file location, schema, env var overrides |
-| [Agent Discovery](docs/agent-discovery.md) | Relative path, PATH lookup, explicit declaration |
-| [Execution Model](docs/execution-model.md) | Context input, opaque execution, result delivery |
-| [Safety & Guardrails](docs/safety-and-guardrails.md) | Depth tracking, loop detection, timeouts, signals |
-| [Security](docs/security.md) | Trust levels, setup flow, filesystem boundaries |
-| [Execution Logging](docs/execution-logging.md) | JSONL format, session tracking, rotation |
-| [Context Store](docs/context-store.md) | Persistent store for findings, decisions, artifacts |
-| [Agent Environment](docs/agent-environment.md) | Env var declaration, validation, precedence |
-| [Service Dependencies](docs/service-dependencies.md) | Embedded docker compose, health checks, connection injection |
-| [MCP Server Mode](docs/mcp-server-mode.md) | `--mcp` flag, tool mapping, dual-mode agents |
-| [SDK (TypeScript/Bun)](docs/sdk-typescript.md) | Reference implementation and API surface |
-| [sfa CLI](docs/sfa-cli.md) | Go binary for scaffolding, validation, service management |
-
-## Guides
-
-- [Getting Started](docs/guides/getting-started.md) — create your first agent in 5 minutes
-- [SDK API Reference](docs/guides/sdk-api-reference.md) — all exported functions, types, and options
-- [Vendoring](docs/guides/vendoring.md) — copy the SDK into your project
-- [Services](docs/guides/services.md) — add docker compose dependencies
-- [Discovery](docs/guides/discovery.md) — make your agent findable
-- [Compilation](docs/guides/compilation.md) — build standalone executables
-- [MCP Server Mode](docs/guides/mcp.md) — expose your agent as an MCP server
 
 ## Development
 
