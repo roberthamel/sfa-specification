@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -90,11 +91,71 @@ func writeContextEntry(entry ContextEntry, agentName, sessionID, storePath strin
 }
 
 // searchContextEntries searches the context store for entries matching the query.
+// Uses ripgrep for text queries when available, falls back to Go-native search.
 // Returns results sorted by timestamp descending (most recent first).
 func searchContextEntries(query ContextQuery, storePath string) ([]ContextResult, error) {
+	// If there's a text query, try ripgrep first for speed
+	if query.Query != "" {
+		if results, err := searchWithRipgrep(query, storePath); err == nil {
+			return results, nil
+		}
+		// ripgrep unavailable or failed — fall back to native search
+	}
+
+	return searchNative(query, storePath)
+}
+
+// searchWithRipgrep uses ripgrep to find matching files, then applies metadata filters.
+// Returns an error if ripgrep is not available.
+func searchWithRipgrep(query ContextQuery, storePath string) ([]ContextResult, error) {
+	rgPath, err := exec.LookPath("rg")
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.Command(rgPath, "--files-with-matches", "--glob", "*.md",
+		"--ignore-case", "--", query.Query, storePath)
+	out, err := cmd.Output()
+	if err != nil {
+		// Exit code 1 means no matches — that's fine
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var results []ContextResult
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		entry, err := parseContextFile(line)
+		if err != nil {
+			continue
+		}
+		// Apply metadata filters that ripgrep can't handle
+		if query.Agent != "" && entry.Agent != query.Agent {
+			continue
+		}
+		if query.Type != "" && entry.Type != query.Type {
+			continue
+		}
+		if len(query.Tags) > 0 && !hasAnyTag(entry.Tags, query.Tags) {
+			continue
+		}
+		results = append(results, *entry)
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Timestamp > results[j].Timestamp
+	})
+	return results, nil
+}
+
+// searchNative walks the context store directory and filters in pure Go.
+func searchNative(query ContextQuery, storePath string) ([]ContextResult, error) {
 	var results []ContextResult
 
-	// Walk the context store directory
 	err := filepath.Walk(storePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // skip errors
@@ -108,17 +169,14 @@ func searchContextEntries(query ContextQuery, storePath string) ([]ContextResult
 			return nil // skip unparseable files
 		}
 
-		// Apply filters
 		if query.Agent != "" && entry.Agent != query.Agent {
 			return nil
 		}
 		if query.Type != "" && entry.Type != query.Type {
 			return nil
 		}
-		if len(query.Tags) > 0 {
-			if !hasAnyTag(entry.Tags, query.Tags) {
-				return nil
-			}
+		if len(query.Tags) > 0 && !hasAnyTag(entry.Tags, query.Tags) {
+			return nil
 		}
 		if query.Query != "" {
 			if !strings.Contains(strings.ToLower(entry.Content), strings.ToLower(query.Query)) {
@@ -134,11 +192,9 @@ func searchContextEntries(query ContextQuery, storePath string) ([]ContextResult
 		return nil, err
 	}
 
-	// Sort by timestamp descending
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Timestamp > results[j].Timestamp
 	})
-
 	return results, nil
 }
 

@@ -126,7 +126,8 @@ func writeLogEntry(entry *LogEntry, config *LoggingConfig) {
 	}
 	data = append(data, '\n')
 
-	// Append to file
+	// Append to file. O_APPEND writes are atomic at the kernel level for
+	// sizes under PIPE_BUF (typically 4KB), which JSONL entries always are.
 	f, err := os.OpenFile(config.FilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to open log file: %v\n", err)
