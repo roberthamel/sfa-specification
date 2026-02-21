@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sfa/cli/embedded"
 )
 
 func TestResolveRunner(t *testing.T) {
@@ -211,6 +213,55 @@ if (process.argv.includes("--version")) {
 	if !hasFailure {
 		t.Error("non-compliant agent should have at least one describe check failure")
 	}
+}
+
+func TestCheckSDKVersionOutdated(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	// Create .sfa marker
+	marker := sfaMarker{Language: "typescript", SDKPath: "sdk/"}
+	data, _ := json.Marshal(marker)
+	os.WriteFile(".sfa", data, 0644)
+
+	// Create vendored SDK with old version
+	os.MkdirAll("sdk", 0755)
+	os.WriteFile(filepath.Join("sdk", "VERSION"), []byte("0.0.1\n"), 0644)
+
+	// checkSDKVersion should not panic (it prints to stdout)
+	checkSDKVersion()
+}
+
+func TestCheckSDKVersionCurrent(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	// Create .sfa marker
+	marker := sfaMarker{Language: "typescript", SDKPath: "sdk/"}
+	data, _ := json.Marshal(marker)
+	os.WriteFile(".sfa", data, 0644)
+
+	// Create vendored SDK with current embedded version
+	os.MkdirAll("sdk", 0755)
+	currentVersion := embedded.SDKVersion()
+	os.WriteFile(filepath.Join("sdk", "VERSION"), []byte(currentVersion+"\n"), 0644)
+
+	// checkSDKVersion should not panic
+	checkSDKVersion()
+}
+
+func TestCheckSDKVersionNoSDK(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	// No .sfa, no SDK directory — should silently return
+	checkSDKVersion()
 }
 
 // findSDKPath returns the SDK import path relative to test tmp dirs.

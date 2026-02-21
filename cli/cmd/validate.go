@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
+	"github.com/sfa/cli/embedded"
 	"github.com/spf13/cobra"
 )
 
@@ -65,6 +67,10 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("All %d checks passed\n", len(results))
+
+	// SDK version warning (non-fatal)
+	checkSDKVersion()
+
 	return nil
 }
 
@@ -189,4 +195,25 @@ func checkDescribe(runner []string) []validationResult {
 	}
 
 	return results
+}
+
+// checkSDKVersion prints a warning if the vendored SDK is outdated.
+func checkSDKVersion() {
+	language, sdkPath, err := detectProject("")
+	if err != nil {
+		return // no SDK found, skip silently
+	}
+
+	versionPath := filepath.Join(sdkPath, "VERSION")
+	data, err := os.ReadFile(versionPath)
+	if err != nil {
+		return // no VERSION file, skip silently
+	}
+
+	vendored := strings.TrimSpace(string(data))
+	current := embedded.SDKVersion()
+
+	if vendored != current {
+		fmt.Printf("\n  ⚠ SDK outdated: %s → %s (run `sfa update` to upgrade, language=%s)\n", vendored, current, language)
+	}
 }
