@@ -6,12 +6,11 @@ An SFA is a self-contained executable with a consistent CLI interface. Any agent
 
 ## Quick start
 
+### TypeScript (Bun)
+
 ```bash
-# Scaffold a new agent
 sfa init my-agent
 cd my-agent
-
-# Write your agent (agent.ts)
 ```
 
 ```typescript
@@ -30,21 +29,43 @@ export default defineAgent({
 ```
 
 ```bash
-# Run it
-bun agent.ts --context "Alice"
-# Hello, Alice!
+bun agent.ts --context "Alice"   # Hello, Alice!
+bun agent.ts --help              # Built-in CLI flags
+bun agent.ts --describe          # Machine-readable JSON metadata
+```
 
-echo "Bob" | bun agent.ts
-# Hello, Bob!
+### Go
 
-# Built-in flags work automatically
-bun agent.ts --help
-bun agent.ts --version
-bun agent.ts --describe   # Machine-readable JSON metadata
+```bash
+sfa init my-agent --language golang
+cd my-agent
+```
 
-# Compile to a standalone binary
-bun build --compile agent.ts --outfile my-agent
-./my-agent --context "Alice"
+```go
+package main
+
+import "my-agent/sfa"
+
+func main() {
+	sfa.DefineAgent(sfa.AgentDef{
+		Name:        "my-agent",
+		Version:     "1.0.0",
+		Description: "Greets the caller by name",
+		Execute: func(ctx sfa.ExecuteContext) (*sfa.InvokeResult, error) {
+			name := ctx.Input
+			if name == "" {
+				name = "world"
+			}
+			return &sfa.InvokeResult{Result: "Hello, " + name + "!"}, nil
+		},
+	}).Run()
+}
+```
+
+```bash
+go build -o my-agent . && ./my-agent --context "Alice"   # Hello, Alice!
+./my-agent --help
+./my-agent --describe
 ```
 
 ## What you get for free
@@ -65,16 +86,21 @@ The SDK handles everything that isn't your agent's logic:
 
 ```
 single-file-agents/
-├── @sfa/sdk/          # TypeScript/Bun reference SDK (vendored into agent projects)
-├── cli/               # sfa CLI tool (Go) — init, validate, services management
-├── docs/              # Specification documents and guides
-├── examples/          # Example agents
-│   ├── hello-world/        # Minimal agent, no deps
-│   ├── code-reviewer/      # Reads stdin, writes findings to context store
-│   ├── code-fix/           # Composes code-reviewer as a subagent
-│   ├── semantic-search/    # Uses pgvector via embedded docker compose
-│   └── code-reviewer-mcp/  # Multi-tool MCP server mode
-└── tests/sdk/         # SDK test suite
+├── sdk/
+│   ├── typescript/@sfa/sdk/  # TypeScript/Bun SDK (vendored into agent projects)
+│   └── golang/sfa/           # Go SDK (vendored into agent projects)
+├── cli/                      # sfa CLI tool (Go) — init, validate, update
+│   └── embedded/sdks/        # Embedded SDK copies for scaffolding
+├── docs/                     # Specification documents and guides
+├── examples/                 # Example agents
+│   ├── hello-world/          # Minimal agent, no deps
+│   ├── code-reviewer/        # Reads stdin, writes findings to context store
+│   ├── code-fix/             # Composes code-reviewer as a subagent
+│   ├── semantic-search/      # Uses pgvector via embedded docker compose
+│   └── code-reviewer-mcp/    # Multi-tool MCP server mode
+├── tests/sdk/                # SDK test suite
+├── VERSION                   # Spec version (shared across all SDKs)
+└── CHANGELOG.md              # Release history
 ```
 
 ## Specification
@@ -119,7 +145,7 @@ make lint            # Typecheck SDK, vet Go CLI
 make build           # Build sfa CLI binary
 make build-examples  # Compile examples to standalone binaries
 make validate-examples  # Validate examples against the spec
-make sync-sdk        # Sync SDK source into CLI embedded directory
+make sync-sdks       # Sync SDK sources into CLI embedded directory
 
 make all             # lint + test + validate + build
 ```

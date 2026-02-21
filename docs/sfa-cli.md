@@ -1,6 +1,6 @@
 # sfa CLI
 
-The `sfa` CLI is a global command-line tool for ecosystem management. It is a separate Go binary — not part of the TypeScript SDK. This document defines its subcommands: `init`, `validate`, and `services`.
+The `sfa` CLI is a global command-line tool for ecosystem management. It is a separate Go binary — not part of any SDK. This document defines its subcommands: `init`, `validate`, `update`, and `services`.
 
 ## Overview
 
@@ -18,15 +18,29 @@ Built with `CGO_ENABLED=0 go build` for fully static binaries.
 Scaffolds a new single-file agent project.
 
 ```bash
-sfa init my-agent
+sfa init my-agent                     # TypeScript (default)
+sfa init my-agent --language golang   # Go
 ```
 
-Creates:
+Creates (TypeScript):
 
 ```
 my-agent/
 ├── agent.ts          — Minimal agent using defineAgent()
-├── @sfa/sdk/         — Vendored SDK source (complete, ready to import)
+├── @sfa/sdk/         — Vendored SDK source
+├── .sfa              — Project marker (language, SDK path)
+└── README.md         — Quick-start instructions
+```
+
+Creates (Go):
+
+```
+my-agent/
+├── agent.go          — Minimal agent using sfa.DefineAgent()
+├── go.mod            — Go module with local SDK replace directive
+├── sfa/              — Vendored Go SDK source
+│   └── go.mod        — SDK module
+├── .sfa              — Project marker (language, SDK path)
 └── README.md         — Quick-start instructions
 ```
 
@@ -35,18 +49,55 @@ my-agent/
 | Flag | Description |
 |---|---|
 | `--name "Display Name"` | Custom display name; derives kebab-case agent name |
+| `--language <lang>` | Language: `typescript` (default), `golang` |
+| `--sdk-path <path>` | Override default SDK vendoring location |
 
 ### Behavior
 
-- The TypeScript SDK source files are embedded in the Go binary via `embed.FS` and extracted during scaffolding
-- The scaffolded `agent.ts` includes a placeholder name, description, and execute function
-- The scaffolded agent runs immediately: `bun agent.ts --help`
-- The scaffolded agent compiles: `bun build --compile agent.ts --outfile my-agent`
-- The compiled agent passes `sfa validate`
+- SDK source files for each language are embedded in the Go binary via `embed.FS` and extracted during scaffolding
+- A `.sfa` marker file records the language and SDK path for `sfa update` and `sfa validate`
+- TypeScript: scaffolded agent runs immediately with `bun agent.ts --help`
+- Go: scaffolded agent builds with `go build -o my-agent .` and runs with `./my-agent --help`
+- The scaffolded agent passes `sfa validate`
 
 ### Guards
 
 If the target directory already exists and is non-empty, `sfa init` refuses and prints a message suggesting an empty directory or a new name (exit code 1).
+
+## `sfa update`
+
+Updates the vendored SDK in an existing agent project to the latest version embedded in the CLI.
+
+```bash
+cd my-agent
+sfa update
+sfa update --dry-run              # Preview without modifying files
+sfa update --language golang      # Override language detection
+```
+
+### Detection
+
+Language and SDK path are determined by:
+
+1. `.sfa` marker file (written by `sfa init`)
+2. Auto-detection: `@sfa/sdk/` directory → TypeScript, `sfa/*.go` files → Go
+3. `--language` flag overrides detected language
+
+### Behavior
+
+- Compares vendored `VERSION` against embedded version
+- If already current, prints message and exits
+- Deletes vendored SDK directory and re-extracts from embedded copy
+- Injects `VERSION` and `CHANGELOG.md` into the new SDK directory
+- For Go agents: preserves the existing `sfa/go.mod` module path
+- Displays relevant CHANGELOG entries between old and new versions
+
+### Options
+
+| Flag | Description |
+|---|---|
+| `--language <lang>` | Override language detection |
+| `--dry-run` | Preview version change and changelog without modifying files |
 
 ## `sfa validate`
 
@@ -80,6 +131,8 @@ If `env` declarations are present, each entry must have:
 On success: reports all checks passed, exits with code 0.
 
 On failure: reports each failure with a clear description of expected vs. received, exits with code 1.
+
+After validation, if a vendored SDK is detected, prints a warning if it is outdated compared to the CLI's embedded version. This warning is non-fatal and does not affect the exit code.
 
 ### Language Agnostic
 
@@ -137,7 +190,7 @@ If docker is not installed or not running, the CLI prints a clear error message 
 
 ## Design Principles
 
-- The `sfa` CLI does not depend on the TypeScript SDK, Bun, or Node.js at runtime
+- The `sfa` CLI does not depend on any SDK, Bun, Node.js, or Go at runtime
 - It operates purely by invoking agents as subprocesses and querying docker
-- The embedded SDK is only used by `sfa init` for scaffolding
+- Embedded SDKs are used by `sfa init` for scaffolding and `sfa update` for upgrading
 - This ensures the CLI works with agents built in any language
