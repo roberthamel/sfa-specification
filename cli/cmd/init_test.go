@@ -103,6 +103,11 @@ func TestRunInitCreatesProject(t *testing.T) {
 		t.Error("SDK index.ts not extracted")
 	}
 
+	// Check types subdirectory is extracted (requires recursive embed)
+	if _, err := os.Stat(filepath.Join(sdkDir, "types", "index.ts")); os.IsNotExist(err) {
+		t.Error("SDK types/index.ts not extracted — embed directive may not recurse into subdirectories")
+	}
+
 	// Check VERSION injected into SDK dir
 	if _, err := os.Stat(filepath.Join(sdkDir, "VERSION")); os.IsNotExist(err) {
 		t.Error("VERSION not injected into SDK directory")

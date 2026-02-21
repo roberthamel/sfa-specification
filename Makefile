@@ -1,8 +1,8 @@
-.PHONY: all test lint validate build clean help
-.PHONY: test-sdk-typescript test-sdk-golang test-sdks test-cli test-all
+.PHONY: all ci test lint validate build clean help
+.PHONY: test-sdk-typescript test-sdk-golang test-sdks test-cli
 .PHONY: lint-sdk lint-cli
 .PHONY: validate-examples
-.PHONY: build-cli build-examples build-all
+.PHONY: build-cli build-examples build-cross
 .PHONY: sync-sdks
 
 # ─── Config ───────────────────────────────────────────────────────────
@@ -22,7 +22,10 @@ BUILD_DIR      := build
 PLATFORMS      := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 
 # ─── Default ──────────────────────────────────────────────────────────
-all: lint test validate build
+all: lint test build
+
+# ─── CI ──────────────────────────────────────────────────────────────
+ci: lint test-sdks sync-sdks test-cli build ## Full CI pipeline
 
 # ─── Testing ──────────────────────────────────────────────────────────
 test: test-sdks test-cli ## Run all tests
@@ -35,7 +38,7 @@ test-sdk-golang: ## Run Go SDK tests
 
 test-sdks: test-sdk-typescript test-sdk-golang ## Run all SDK tests
 
-test-cli: ## Run CLI tests (go)
+test-cli: sync-sdks ## Run CLI tests (go) — requires embedded files
 	cd $(CLI_DIR) && go test ./...
 
 # ─── Linting ──────────────────────────────────────────────────────────
@@ -46,7 +49,7 @@ lint-sdk: ## Typecheck SDK with tsc
 		--skipLibCheck --types bun-types \
 		$(SDK_TS_DIR)/index.ts
 
-lint-cli: ## Lint Go CLI with vet
+lint-cli: sync-sdks ## Lint Go CLI with vet — requires embedded files
 	cd $(CLI_DIR) && go vet ./...
 
 # ─── Validation ───────────────────────────────────────────────────────
@@ -71,7 +74,7 @@ build-examples: ## Compile example agents to standalone binaries
 		bun build --compile $(EXAMPLES_DIR)/$$ex/agent.ts --outfile $(BUILD_DIR)/examples/$$ex; \
 	done
 
-build-cross: ## Cross-compile sfa CLI for all platforms
+build-cross: sync-sdks ## Cross-compile sfa CLI for all platforms
 	@mkdir -p $(BUILD_DIR)
 	@for platform in $(PLATFORMS); do \
 		os=$${platform%%/*}; \
@@ -85,6 +88,10 @@ build-cross: ## Cross-compile sfa CLI for all platforms
 
 # ─── SDK Sync ─────────────────────────────────────────────────────────
 sync-sdks: ## Sync SDK sources + VERSION + CHANGELOG into CLI embedded directory
+	@test -d $(SDK_TS_DIR) || { echo "ERROR: $(SDK_TS_DIR) not found"; exit 1; }
+	@test -d $(SDK_GO_DIR) || { echo "ERROR: $(SDK_GO_DIR) not found"; exit 1; }
+	@test -f VERSION || { echo "ERROR: VERSION file not found at project root"; exit 1; }
+	@test -f CHANGELOG.md || { echo "ERROR: CHANGELOG.md not found at project root"; exit 1; }
 	@echo "Syncing TypeScript SDK → $(EMBEDDED_SDKS)/typescript/"
 	@rm -rf $(EMBEDDED_SDKS)/typescript
 	@mkdir -p $(EMBEDDED_SDKS)/typescript
@@ -102,8 +109,10 @@ sync-sdks: ## Sync SDK sources + VERSION + CHANGELOG into CLI embedded directory
 	@cp CHANGELOG.md $(EMBEDDED_DIR)/CHANGELOG.md
 
 # ─── Clean ────────────────────────────────────────────────────────────
-clean: ## Remove build artifacts
+clean: ## Remove build artifacts and generated embedded files
 	rm -rf $(BUILD_DIR)
+	rm -rf $(EMBEDDED_SDKS)
+	rm -f $(EMBEDDED_DIR)/VERSION $(EMBEDDED_DIR)/CHANGELOG.md
 
 # ─── Help ─────────────────────────────────────────────────────────────
 help: ## Show this help

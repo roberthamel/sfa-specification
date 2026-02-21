@@ -9,10 +9,10 @@ import (
 	"strings"
 )
 
-//go:embed sdks/typescript/*
+//go:embed all:sdks/typescript
 var typescriptFS embed.FS
 
-//go:embed sdks/golang/*
+//go:embed all:sdks/golang
 var golangFS embed.FS
 
 //go:embed VERSION
