@@ -36,6 +36,18 @@ An SFA:
 | [SDK (TypeScript/Bun)](./sdk-typescript.md) | Reference implementation, vendoring model, API surface |
 | [sfa CLI](./sfa-cli.md) | Go binary for validation, scaffolding, service management |
 
+## Guides
+
+| Guide | Description |
+|---|---|
+| [Getting Started](./guides/getting-started.md) | Create your first agent in 5 minutes |
+| [SDK API Reference](./guides/sdk-api-reference.md) | All exported functions, types, and options |
+| [Vendoring](./guides/vendoring.md) | How to copy the SDK into your project |
+| [Services](./guides/services.md) | Add docker compose dependencies to an agent |
+| [Discovery](./guides/discovery.md) | Make your agent findable (skill, PATH, explicit) |
+| [Compilation](./guides/compilation.md) | Build standalone executables with `bun build --compile` |
+| [MCP Server Mode](./guides/mcp.md) | Enable MCP server mode, declare tools, configure clients |
+
 ## Key Principles
 
 - **Language-agnostic spec, TypeScript reference SDK**: The spec defines CLI behavior; any language can implement it
