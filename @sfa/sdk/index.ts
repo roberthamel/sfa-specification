@@ -22,8 +22,13 @@ export { ExitCode } from "./types";
 export type { SfaConfig, AgentNamespaceConfig } from "./config";
 export { loadConfig, saveConfig, getConfigPath, mergeConfig, applyEnvOverrides } from "./config";
 export { resolveEnv, validateEnv, injectEnv, maskSecrets, buildSubagentEnv, runSetup } from "./env";
+export { initSafety, checkDepthLimit, checkLoop, buildSubagentSafetyEnv } from "./safety";
+export { resolveLoggingConfig, createLogEntry, writeLogEntry } from "./logging";
+export type { LogEntry, LoggingConfig } from "./logging";
+export { resolveContextStorePath, writeContext, searchContext, updateContext, addContextLink } from "./context";
 
 import type { AgentDefinition, AgentResult, ExecuteContext } from "./types";
+import type { WriteContextInput, SearchContextInput } from "./types";
 import { ExitCode } from "./types";
 import { parseArgs } from "./cli";
 import { generateHelp, generateDescribe } from "./help";
@@ -37,8 +42,14 @@ import {
   maskSecrets,
   formatMissingEnvError,
   runSetup,
-  buildSubagentEnv,
 } from "./env";
+import { initSafety, setupTimeout, setupSignalHandlers } from "./safety";
+import { resolveLoggingConfig, createLogEntry, writeLogEntry } from "./logging";
+import {
+  resolveContextStorePath,
+  writeContext as writeContextImpl,
+  searchContext as searchContextImpl,
+} from "./context";
 
 /**
  * Define and run a single-file agent.
@@ -120,39 +131,19 @@ async function runAgent(def: AgentDefinition): Promise<void> {
   // Inject resolved env vars into process.env
   injectEnv(resolvedEnv);
 
-  // Read SFA protocol env vars
-  const depth = parseInt(process.env.SFA_DEPTH ?? "0", 10);
-  const maxDepth = args.flags["max-depth"] ?? parseInt(process.env.SFA_MAX_DEPTH ?? "5", 10);
-  const sessionId =
-    process.env.SFA_SESSION_ID ?? crypto.randomUUID();
-  const callChain = process.env.SFA_CALL_CHAIN
-    ? process.env.SFA_CALL_CHAIN.split(",")
-    : [];
-  const timeout = args.flags.timeout;
+  // --- Section 5: Safety & Guardrails ---
+  const safety = initSafety(def.name, args.flags["max-depth"]);
+  const { controller: ac, cleanup: cleanupTimeout } = setupTimeout(def.name, args.flags.timeout);
+  const { cleanup: cleanupSignals } = setupSignalHandlers(def.name, ac);
 
-  // Set up AbortController for timeout and signal handling
-  const ac = new AbortController();
+  // --- Section 6: Resolve logging config ---
+  const loggingConfig = resolveLoggingConfig(config, args.flags["no-log"]);
 
-  // Timeout timer
-  const timeoutTimer = setTimeout(() => {
-    emitProgress(def.name, `timeout after ${timeout}s`);
-    ac.abort();
-  }, timeout * 1000);
+  // --- Section 7: Resolve context store path ---
+  const contextStorePath = resolveContextStorePath(config);
 
-  // Signal handlers
-  const onSigint = () => {
-    emitProgress(def.name, "interrupted");
-    ac.abort();
-    // Defer exit to let cleanup happen
-    setTimeout(() => process.exit(ExitCode.SIGINT), 100);
-  };
-  const onSigterm = () => {
-    emitProgress(def.name, "terminating");
-    ac.abort();
-    setTimeout(() => process.exit(ExitCode.SIGTERM), 5000);
-  };
-  process.on("SIGINT", onSigint);
-  process.on("SIGTERM", onSigterm);
+  // Track context files written during this invocation (for log cross-reference)
+  const contextFilesWritten: string[] = [];
 
   // Read input context
   let input: string;
@@ -191,52 +182,102 @@ async function runAgent(def: AgentDefinition): Promise<void> {
     env: process.env as Record<string, string | undefined>,
     config: mergedConfig,
     signal: ac.signal,
-    depth,
-    sessionId,
+    depth: safety.depth,
+    sessionId: safety.sessionId,
     agentName: def.name,
     agentVersion: def.version,
     progress,
-    // Stubbed — full implementations in later sections
+    // Stubbed — invoke() requires SDK subagent invocation module (Section 8)
     invoke: async () => {
-      throw new Error("invoke() not yet available — requires SDK safety & invocation modules");
+      throw new Error("invoke() not yet available — requires SDK subagent invocation module");
     },
-    writeContext: async () => {
-      throw new Error("writeContext() not yet available — requires SDK context store module");
+    writeContext: async (entry: WriteContextInput): Promise<string> => {
+      const filePath = writeContextImpl(entry, def.name, safety.sessionId, contextStorePath);
+      contextFilesWritten.push(filePath);
+      return filePath;
     },
-    searchContext: async () => {
-      throw new Error("searchContext() not yet available — requires SDK context store module");
+    searchContext: async (query: SearchContextInput): Promise<import("./types").ContextEntry[]> => {
+      return searchContextImpl(query, contextStorePath);
     },
   };
 
   // Execute the agent
   let result: AgentResult;
+  let exitCode: number = ExitCode.SUCCESS;
   try {
     result = await def.execute(ctx);
   } catch (err: unknown) {
-    clearTimeout(timeoutTimer);
-    process.off("SIGINT", onSigint);
-    process.off("SIGTERM", onSigterm);
+    cleanupTimeout();
+    cleanupSignals();
 
     if (ac.signal.aborted) {
-      // Timeout or signal — exit with appropriate code
-      process.exit(ExitCode.TIMEOUT);
+      exitCode = ExitCode.TIMEOUT;
+      // Log the timeout
+      const entry = createLogEntry({
+        agent: def.name,
+        version: def.version,
+        exitCode,
+        startTime,
+        depth: safety.depth,
+        callChain: safety.callChain,
+        sessionId: safety.sessionId,
+        input,
+        output: "Execution timed out",
+        meta: contextFilesWritten.length > 0 ? { contextFiles: contextFilesWritten } : undefined,
+      });
+      writeLogEntry(entry, loggingConfig);
+      process.exit(exitCode);
     }
 
+    exitCode = ExitCode.FAILURE;
     if (!args.flags.quiet) {
       emitProgress(def.name, "failed");
     }
-    exitWithError((err as Error).message ?? String(err), ExitCode.FAILURE);
+
+    // Log the failure
+    const entry = createLogEntry({
+      agent: def.name,
+      version: def.version,
+      exitCode,
+      startTime,
+      depth: safety.depth,
+      callChain: safety.callChain,
+      sessionId: safety.sessionId,
+      input,
+      output: (err as Error).message ?? String(err),
+      meta: contextFilesWritten.length > 0 ? { contextFiles: contextFilesWritten } : undefined,
+    });
+    writeLogEntry(entry, loggingConfig);
+
+    exitWithError((err as Error).message ?? String(err), exitCode);
   }
 
-  clearTimeout(timeoutTimer);
-  process.off("SIGINT", onSigint);
-  process.off("SIGTERM", onSigterm);
+  cleanupTimeout();
+  cleanupSignals();
 
   // Progress: completed
   if (!args.flags.quiet) {
     const durationMs = Date.now() - startTime;
     emitProgress(def.name, `completed in ${durationMs}ms`);
   }
+
+  // Determine output summary for logging
+  const outputStr = typeof result.result === "string" ? result.result : JSON.stringify(result.result);
+
+  // Write execution log entry
+  const logEntry = createLogEntry({
+    agent: def.name,
+    version: def.version,
+    exitCode,
+    startTime,
+    depth: safety.depth,
+    callChain: safety.callChain,
+    sessionId: safety.sessionId,
+    input,
+    output: outputStr,
+    meta: contextFilesWritten.length > 0 ? { contextFiles: contextFilesWritten } : undefined,
+  });
+  writeLogEntry(logEntry, loggingConfig);
 
   // Write result to stdout
   writeResult(result, args.flags["output-format"]);
