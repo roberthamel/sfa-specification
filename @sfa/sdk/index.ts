@@ -19,12 +19,26 @@ export type {
 
 export { ExitCode } from "./types";
 
+export type { SfaConfig, AgentNamespaceConfig } from "./config";
+export { loadConfig, saveConfig, getConfigPath, mergeConfig, applyEnvOverrides } from "./config";
+export { resolveEnv, validateEnv, injectEnv, maskSecrets, buildSubagentEnv, runSetup } from "./env";
+
 import type { AgentDefinition, AgentResult, ExecuteContext } from "./types";
 import { ExitCode } from "./types";
 import { parseArgs } from "./cli";
 import { generateHelp, generateDescribe } from "./help";
 import { readInput } from "./input";
 import { writeResult, exitWithError, emitProgress } from "./output";
+import { loadConfig, applyEnvOverrides, mergeConfig } from "./config";
+import {
+  resolveEnv,
+  validateEnv,
+  injectEnv,
+  maskSecrets,
+  formatMissingEnvError,
+  runSetup,
+  buildSubagentEnv,
+} from "./env";
 
 /**
  * Define and run a single-file agent.
@@ -82,6 +96,30 @@ async function runAgent(def: AgentDefinition): Promise<void> {
     }
   }
 
+  // --- Section 3: Load and merge config ---
+  const rawConfig = await loadConfig();
+  const config = applyEnvOverrides(rawConfig);
+  const mergedConfig = mergeConfig(config, def.name);
+
+  // --- Section 4: Resolve and validate environment ---
+  const declarations = def.env ?? [];
+  const resolvedEnv = resolveEnv(declarations, def.name, config);
+
+  // --setup: run interactive setup and exit
+  if (args.flags.setup) {
+    await runSetup(def.name, declarations, args.flags["non-interactive"]);
+    process.exit(ExitCode.SUCCESS);
+  }
+
+  // Validate required env vars
+  const missingEnv = validateEnv(declarations, resolvedEnv);
+  if (missingEnv.length > 0) {
+    exitWithError(formatMissingEnvError(def.name, missingEnv), ExitCode.INVALID_USAGE);
+  }
+
+  // Inject resolved env vars into process.env
+  injectEnv(resolvedEnv);
+
   // Read SFA protocol env vars
   const depth = parseInt(process.env.SFA_DEPTH ?? "0", 10);
   const maxDepth = args.flags["max-depth"] ?? parseInt(process.env.SFA_MAX_DEPTH ?? "5", 10);
@@ -135,15 +173,15 @@ async function runAgent(def: AgentDefinition): Promise<void> {
     );
   }
 
-  // Progress: starting
+  // Progress: starting (with secret masking)
   if (!args.flags.quiet) {
     emitProgress(def.name, "starting");
   }
 
-  // Build the execute context
+  // Build the execute context with secret-aware progress
   const progress = (message: string) => {
     if (!args.flags.quiet) {
-      emitProgress(def.name, message);
+      emitProgress(def.name, maskSecrets(message, resolvedEnv));
     }
   };
 
@@ -151,7 +189,7 @@ async function runAgent(def: AgentDefinition): Promise<void> {
     input,
     options: { ...args.flags, ...args.custom } as Record<string, string | number | boolean>,
     env: process.env as Record<string, string | undefined>,
-    config: {}, // Config loading is handled in section 3
+    config: mergedConfig,
     signal: ac.signal,
     depth,
     sessionId,
