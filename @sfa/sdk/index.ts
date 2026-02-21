@@ -26,6 +26,8 @@ export { initSafety, checkDepthLimit, checkLoop, buildSubagentSafetyEnv } from "
 export { resolveLoggingConfig, createLogEntry, writeLogEntry } from "./logging";
 export type { LogEntry, LoggingConfig } from "./logging";
 export { resolveContextStorePath, writeContext, searchContext, updateContext, addContextLink } from "./context";
+export { invoke } from "./invoke";
+export { startServices, stopServices, composeDown, handleServicesDown, checkDockerAvailability } from "./services";
 
 import type { AgentDefinition, AgentResult, ExecuteContext } from "./types";
 import type { WriteContextInput, SearchContextInput } from "./types";
@@ -50,6 +52,8 @@ import {
   writeContext as writeContextImpl,
   searchContext as searchContextImpl,
 } from "./context";
+import { invoke as invokeSubagent } from "./invoke";
+import { startServices, stopServices, handleServicesDown } from "./services";
 
 /**
  * Define and run a single-file agent.
@@ -131,6 +135,11 @@ async function runAgent(def: AgentDefinition): Promise<void> {
   // Inject resolved env vars into process.env
   injectEnv(resolvedEnv);
 
+  // --- Section 9: Handle --services-down flag ---
+  if (args.flags["services-down"]) {
+    await handleServicesDown(def.name);
+  }
+
   // --- Section 5: Safety & Guardrails ---
   const safety = initSafety(def.name, args.flags["max-depth"]);
   const { controller: ac, cleanup: cleanupTimeout } = setupTimeout(def.name, args.flags.timeout);
@@ -144,6 +153,11 @@ async function runAgent(def: AgentDefinition): Promise<void> {
 
   // Track context files written during this invocation (for log cross-reference)
   const contextFilesWritten: string[] = [];
+
+  // --- Section 9: Start services if declared ---
+  if (def.services && Object.keys(def.services).length > 0) {
+    await startServices(def, process.env as Record<string, string | undefined>);
+  }
 
   // Read input context
   let input: string;
@@ -187,9 +201,12 @@ async function runAgent(def: AgentDefinition): Promise<void> {
     agentName: def.name,
     agentVersion: def.version,
     progress,
-    // Stubbed — invoke() requires SDK subagent invocation module (Section 8)
-    invoke: async () => {
-      throw new Error("invoke() not yet available — requires SDK subagent invocation module");
+    invoke: async (targetAgent: string, invokeOpts?: import("./types").InvokeOptions) => {
+      // Calculate remaining timeout for subagent
+      const elapsed = Date.now() - startTime;
+      const totalTimeoutMs = args.flags.timeout * 1000;
+      const remainingMs = totalTimeoutMs - elapsed;
+      return invokeSubagent(targetAgent, safety, remainingMs > 0 ? remainingMs : undefined, ac.signal, invokeOpts);
     },
     writeContext: async (entry: WriteContextInput): Promise<string> => {
       const filePath = writeContextImpl(entry, def.name, safety.sessionId, contextStorePath);
@@ -209,6 +226,11 @@ async function runAgent(def: AgentDefinition): Promise<void> {
   } catch (err: unknown) {
     cleanupTimeout();
     cleanupSignals();
+
+    // Tear down ephemeral services on failure
+    if (def.services && Object.keys(def.services).length > 0) {
+      await stopServices(def.name, def.serviceLifecycle);
+    }
 
     if (ac.signal.aborted) {
       exitCode = ExitCode.TIMEOUT;
@@ -254,6 +276,11 @@ async function runAgent(def: AgentDefinition): Promise<void> {
 
   cleanupTimeout();
   cleanupSignals();
+
+  // Tear down ephemeral services on success
+  if (def.services && Object.keys(def.services).length > 0) {
+    await stopServices(def.name, def.serviceLifecycle);
+  }
 
   // Progress: completed
   if (!args.flags.quiet) {
