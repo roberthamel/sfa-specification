@@ -10,29 +10,29 @@ The spec covers 13 capabilities. An agent can adopt them incrementally — start
 
 | Spec | What it defines |
 |---|---|
-| [CLI Interface](docs/cli-interface.md) | Standard args, flags, output contract, exit codes |
-| [Shared Config](docs/shared-config.md) | Config file location, schema, env var overrides |
-| [Agent Discovery](docs/agent-discovery.md) | Relative path, PATH lookup, explicit declaration |
-| [Execution Model](docs/execution-model.md) | Context input, opaque execution, result delivery |
-| [Safety & Guardrails](docs/safety-and-guardrails.md) | Depth tracking, loop detection, timeouts, signals |
-| [Security](docs/security.md) | Trust levels, setup flow, filesystem boundaries |
-| [Execution Logging](docs/execution-logging.md) | JSONL format, session tracking, rotation |
-| [Context Store](docs/context-store.md) | Persistent store for findings, decisions, artifacts |
-| [Agent Environment](docs/agent-environment.md) | Env var declaration, validation, precedence |
-| [Service Dependencies](docs/service-dependencies.md) | Embedded docker compose, health checks, connection injection |
-| [MCP Server Mode](docs/mcp-server-mode.md) | `--mcp` flag, tool mapping, dual-mode agents |
-| [SDK (TypeScript/Bun)](docs/sdk-typescript.md) | Reference implementation and API surface |
-| [sfa CLI](docs/sfa-cli.md) | Go binary for scaffolding, validation, service management |
+| [CLI Interface](specification/cli-interface.md) | Standard args, flags, output contract, exit codes |
+| [Shared Config](specification/shared-config.md) | Config file location, schema, env var overrides |
+| [Agent Discovery](specification/agent-discovery.md) | Relative path, PATH lookup, explicit declaration |
+| [Execution Model](specification/execution-model.md) | Context input, opaque execution, result delivery |
+| [Safety & Guardrails](specification/safety-and-guardrails.md) | Depth tracking, loop detection, timeouts, signals |
+| [Security](specification/security.md) | Trust levels, setup flow, filesystem boundaries |
+| [Execution Logging](specification/execution-logging.md) | JSONL format, session tracking, rotation |
+| [Context Store](specification/context-store.md) | Persistent store for findings, decisions, artifacts |
+| [Agent Environment](specification/agent-environment.md) | Env var declaration, validation, precedence |
+| [Service Dependencies](specification/service-dependencies.md) | Embedded docker compose, health checks, connection injection |
+| [MCP Server Mode](specification/mcp-server-mode.md) | `--mcp` flag, tool mapping, dual-mode agents |
+| [SDK (TypeScript/Bun)](specification/sdk-typescript.md) | Reference implementation and API surface |
+| [sfa CLI](specification/sfa-cli.md) | Go binary for scaffolding, validation, service management |
 
 ## Guides
 
-- [Getting Started](docs/guides/getting-started.md) — create your first agent in 5 minutes
-- [SDK API Reference](docs/guides/sdk-api-reference.md) — all exported functions, types, and options
-- [Vendoring](docs/guides/vendoring.md) — copy the SDK into your project
-- [Services](docs/guides/services.md) — add docker compose dependencies
-- [Discovery](docs/guides/discovery.md) — make your agent findable
-- [Compilation](docs/guides/compilation.md) — build standalone executables
-- [MCP Server Mode](docs/guides/mcp.md) — expose your agent as an MCP server
+- [Getting Started](specification/guides/getting-started.md) — create your first agent in 5 minutes
+- [SDK API Reference](specification/guides/sdk-api-reference.md) — all exported functions, types, and options
+- [Vendoring](specification/guides/vendoring.md) — copy the SDK into your project
+- [Services](specification/guides/services.md) — add docker compose dependencies
+- [Discovery](specification/guides/discovery.md) — make your agent findable
+- [Compilation](specification/guides/compilation.md) — build standalone executables
+- [MCP Server Mode](specification/guides/mcp.md) — expose your agent as an MCP server
 
 ## SDK Quick start
 
@@ -121,7 +121,7 @@ single-file-agents/
 │   └── golang/sfa/           # Go SDK (vendored into agent projects)
 ├── cli/                      # sfa CLI tool (Go) — init, validate, update
 │   └── embedded/sdks/        # Embedded SDK copies for scaffolding
-├── docs/                     # Specification documents and guides
+├── specification/                     # Specification documents and guides
 ├── examples/                 # Example agents
 │   ├── hello-world/          # Minimal agent, no deps
 │   ├── code-reviewer/        # Reads stdin, writes findings to context store
